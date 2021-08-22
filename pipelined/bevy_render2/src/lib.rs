@@ -78,6 +78,29 @@ impl DerefMut for RenderWorld {
 #[derive(Default)]
 struct ScratchRenderWorld(World);
 
+/// The  App World. This is only available as a resource during the Queue step.
+#[derive(Default)]
+pub struct AppWorld(World);
+
+impl Deref for AppWorld {
+    type Target = World;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for AppWorld {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// A "scratch" world used to avoid allocating new worlds every frame when
+// swapping out the Render World.
+#[derive(Default)]
+struct ScratchAppWorld(World);
+
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
         let (instance, device, queue) =
@@ -112,7 +135,8 @@ impl Plugin for RenderPlugin {
             .insert_resource(device)
             .insert_resource(queue)
             .init_resource::<RenderGraph>()
-            .init_resource::<DrawFunctions>();
+            .init_resource::<DrawFunctions>()
+            .init_resource::<ScratchAppWorld>();
 
         app.add_sub_app(render_app, move |app_world, render_app| {
             // reserve all existing app entities for use in render_app
@@ -139,11 +163,12 @@ impl Plugin for RenderPlugin {
             prepare.run(&mut render_app.world);
 
             // queue
-            let queue = render_app
-                .schedule
-                .get_stage_mut::<SystemStage>(&RenderStage::Queue)
-                .unwrap();
-            queue.run(&mut render_app.world);
+            queue_worldsurgery(app_world, render_app);
+            // let queue = render_app
+            //     .schedule
+            //     .get_stage_mut::<SystemStage>(&RenderStage::Queue)
+            //     .unwrap();
+            // queue.run(&mut render_app.world);
 
             // phase sort
             let phase_sort = render_app
@@ -196,4 +221,30 @@ fn extract(app_world: &mut World, render_app: &mut App) {
     app_world.insert_resource(ScratchRenderWorld(scratch_world));
 
     extract.apply_buffers(&mut render_app.world);
+}
+
+fn queue_worldsurgery(app_world: &mut World, render_app: &mut App) {
+    let queue = render_app
+        .schedule
+        .get_stage_mut::<SystemStage>(&RenderStage::Queue)
+        .unwrap();
+
+    // temporarily add the app world to the render world as a resource
+    let scratch_world = render_app
+        .world
+        .remove_resource::<ScratchAppWorld>()
+        .unwrap();
+    let app_world_temp = std::mem::replace(app_world, scratch_world.0);
+    render_app.world.insert_resource(AppWorld(app_world_temp));
+
+    queue.run(&mut render_app.world);
+
+    // add the app world back to the  app
+    let app_world_temp = render_app.world.remove_resource::<AppWorld>().unwrap();
+    let scratch_world: World = std::mem::replace(app_world, app_world_temp.0);
+    render_app
+        .world
+        .insert_resource(ScratchAppWorld(scratch_world));
+
+    queue.apply_buffers(app_world);
 }

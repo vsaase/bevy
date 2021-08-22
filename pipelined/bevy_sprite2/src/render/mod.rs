@@ -17,7 +17,7 @@ use bevy_render2::{
     shader::Shader,
     texture::{BevyDefault, Image},
     view::{ViewMeta, ViewUniform, ViewUniformOffset},
-    RenderWorld,
+    AppWorld, RenderWorld,
 };
 use bevy_transform::components::GlobalTransform;
 use bevy_utils::slab::{FrameSlabMap, FrameSlabMapKey};
@@ -358,14 +358,16 @@ pub fn queue_sprites(
     mut sprite_meta: ResMut<SpriteMeta>,
     view_meta: Res<ViewMeta>,
     sprite_shaders: Res<SpriteShaders>,
-    sprite_shaders_assets: Res<Assets<SpriteShaders>>,
     mut extracted_sprites: ResMut<ExtractedSprites>,
     gpu_images: Res<RenderAssets<Image>>,
     mut views: Query<&mut RenderPhase<Transparent2dPhase>>,
+    app_world: Res<AppWorld>,
 ) {
     if view_meta.uniforms.is_empty() {
         return;
     }
+
+    let sprite_shaders_assets = app_world.get_resource::<Assets<SpriteShaders>>().unwrap();
 
     // TODO: define this without needing to check every frame
     sprite_meta.view_bind_group.get_or_insert_with(|| {
@@ -384,8 +386,8 @@ pub fn queue_sprites(
     sprite_meta.texture_bind_group_keys.clear();
     for mut transparent_phase in views.iter_mut() {
         for (i, sprite) in extracted_sprites.sprites.iter().enumerate() {
-            // let extracted_sprite_shaders =
-            //     sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
+            let extracted_sprite_shaders =
+                sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
             let texture_bind_group_key = sprite_meta.texture_bind_groups.get_or_insert_with(
                 sprite.handle.clone_weak(),
                 || {
@@ -402,8 +404,8 @@ pub fn queue_sprites(
                             },
                         ],
                         label: None,
-                        layout: &sprite_shaders.material_layout,
-                        // layout: &extracted_sprite_shaders.material_layout,
+                        // layout: &sprite_shaders.material_layout,
+                        layout: &extracted_sprite_shaders.material_layout,
                     })
                 },
             );
