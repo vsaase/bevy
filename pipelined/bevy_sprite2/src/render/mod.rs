@@ -47,17 +47,6 @@ pub struct SpriteShaders {
     material_layout: BindGroupLayout,
 }
 
-// TODO: this pattern for initializing the shaders / pipeline isn't ideal. this should be handled by the asset system
-impl FromWorld for SpriteShaders {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.get_resource::<RenderDevice>().unwrap();
-        Self::from_device_with_sample_type(
-            render_device,
-            TextureSampleType::Float { filterable: false },
-        )
-    }
-}
-
 impl RenderAsset for SpriteShadersInfo {
     type ExtractedAsset = SpriteShadersInfo;
 
@@ -70,7 +59,7 @@ impl RenderAsset for SpriteShadersInfo {
     fn prepare_asset(
         extracted_asset: Self::ExtractedAsset,
         render_device: &RenderDevice,
-        render_queue: &bevy_render2::renderer::RenderQueue,
+        _render_queue: &bevy_render2::renderer::RenderQueue,
     ) -> Self::PreparedAsset {
         SpriteShaders::from_device_with_sample_type(render_device, extracted_asset.sample_type)
     }
@@ -285,7 +274,9 @@ pub struct SpriteMeta {
     vertices: BufferVec<SpriteVertex>,
     indices: BufferVec<u32>,
     quad: Mesh,
-    view_bind_group: Option<BindGroup>,
+    shaders_handles: Vec<Handle<SpriteShadersInfo>>,
+    view_bind_group_keys: Vec<FrameSlabMapKey<Handle<Image>, BindGroup>>,
+    view_bind_groups: FrameSlabMap<Handle<Image>, BindGroup>,
     texture_bind_group_keys: Vec<FrameSlabMapKey<Handle<Image>, BindGroup>>,
     texture_bind_groups: FrameSlabMap<Handle<Image>, BindGroup>,
 }
@@ -297,12 +288,14 @@ impl Default for SpriteMeta {
             indices: BufferVec::new(BufferUsage::INDEX),
             texture_bind_groups: Default::default(),
             texture_bind_group_keys: Default::default(),
-            view_bind_group: None,
+            view_bind_group_keys: Default::default(),
+            view_bind_groups: Default::default(),
             quad: Quad {
                 size: Vec2::new(1.0, 1.0),
                 ..Default::default()
             }
             .into(),
+            shaders_handles: Default::default(),
         }
     }
 }
@@ -384,7 +377,6 @@ pub fn queue_sprites(
     render_device: Res<RenderDevice>,
     mut sprite_meta: ResMut<SpriteMeta>,
     view_meta: Res<ViewMeta>,
-    sprite_shaders: Res<SpriteShaders>,
     mut extracted_sprites: ResMut<ExtractedSprites>,
     gpu_images: Res<RenderAssets<Image>>,
     sprite_shaders_assets: Res<RenderAssets<SpriteShadersInfo>>,
@@ -393,28 +385,32 @@ pub fn queue_sprites(
     if view_meta.uniforms.is_empty() {
         return;
     }
-
-    // let sprite_shaders_assets = app_world.get_resource::<Assets<SpriteShaders>>().unwrap();
-
-    // TODO: define this without needing to check every frame
-    sprite_meta.view_bind_group.get_or_insert_with(|| {
-        render_device.create_bind_group(&BindGroupDescriptor {
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: view_meta.uniforms.binding(),
-            }],
-            label: None,
-            layout: &sprite_shaders.view_layout,
-        })
-    });
     let sprite_meta = &mut *sprite_meta;
     let draw_sprite_function = draw_functions.read().get_id::<DrawSprite>().unwrap();
     sprite_meta.texture_bind_groups.next_frame();
     sprite_meta.texture_bind_group_keys.clear();
+    sprite_meta.view_bind_groups.next_frame();
+    sprite_meta.view_bind_group_keys.clear();
     for mut transparent_phase in views.iter_mut() {
         for (i, sprite) in extracted_sprites.sprites.iter().enumerate() {
             let extracted_sprite_shaders =
                 sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
+
+            let view_bind_group_key =
+                sprite_meta
+                    .view_bind_groups
+                    .get_or_insert_with(sprite.handle.clone_weak(), || {
+                        render_device.create_bind_group(&BindGroupDescriptor {
+                            entries: &[BindGroupEntry {
+                                binding: 0,
+                                resource: view_meta.uniforms.binding(),
+                            }],
+                            label: None,
+                            layout: &extracted_sprite_shaders.view_layout,
+                        })
+                    });
+            sprite_meta.view_bind_group_keys.push(view_bind_group_key);
+
             let texture_bind_group_key = sprite_meta.texture_bind_groups.get_or_insert_with(
                 sprite.handle.clone_weak(),
                 || {
@@ -439,6 +435,10 @@ pub fn queue_sprites(
             sprite_meta
                 .texture_bind_group_keys
                 .push(texture_bind_group_key);
+
+            sprite_meta
+                .shaders_handles
+                .push(sprite.shaders_handle.clone_weak());
 
             transparent_phase.add(Drawable {
                 draw_function: draw_sprite_function,
@@ -473,7 +473,7 @@ impl Node for SpriteNode {
 }
 
 type DrawSpriteQuery<'s, 'w> = (
-    Res<'w, SpriteShaders>,
+    Res<'w, RenderAssets<SpriteShadersInfo>>,
     Res<'w, SpriteMeta>,
     Query<'w, 's, &'w ViewUniformOffset>,
 );
@@ -499,10 +499,14 @@ impl Draw for DrawSprite {
         _sort_key: usize,
     ) {
         const INDICES: usize = 6;
-        let (sprite_shaders, sprite_meta, views) = self.params.get(world);
+        let (sprite_shaders_assets, sprite_meta, views) = self.params.get(world);
         let view_uniform = views.get(view).unwrap();
         let sprite_meta = sprite_meta.into_inner();
-        pass.set_render_pipeline(&sprite_shaders.into_inner().pipeline);
+        let extracted_sprite_shaders = sprite_shaders_assets
+            .into_inner()
+            .get(&sprite_meta.shaders_handles[draw_key])
+            .unwrap();
+        pass.set_render_pipeline(&extracted_sprite_shaders.pipeline);
         pass.set_vertex_buffer(0, sprite_meta.vertices.buffer().unwrap().slice(..));
         pass.set_index_buffer(
             sprite_meta.indices.buffer().unwrap().slice(..),
@@ -511,7 +515,7 @@ impl Draw for DrawSprite {
         );
         pass.set_bind_group(
             0,
-            sprite_meta.view_bind_group.as_ref().unwrap(),
+            &sprite_meta.view_bind_groups[sprite_meta.view_bind_group_keys[draw_key]],
             &[view_uniform.offset],
         );
         pass.set_bind_group(

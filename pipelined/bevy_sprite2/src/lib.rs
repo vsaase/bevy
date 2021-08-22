@@ -40,7 +40,6 @@ impl Plugin for SpritePlugin {
             .add_system_to_stage(RenderStage::Extract, render::extract_sprites)
             .add_system_to_stage(RenderStage::Prepare, render::prepare_sprites)
             .add_system_to_stage(RenderStage::Queue, queue_sprites)
-            .init_resource::<SpriteShaders>()
             .init_resource::<SpriteMeta>();
         let draw_sprite = DrawSprite::new(&mut render_app.world);
         render_app
