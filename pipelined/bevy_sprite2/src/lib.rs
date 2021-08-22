@@ -6,8 +6,7 @@ mod sprite;
 mod texture_atlas;
 mod texture_atlas_builder;
 
-use bevy_asset::{AddAsset, AssetPlugin};
-use bevy_core::CorePlugin;
+use bevy_asset::AddAsset;
 pub use bundle::*;
 pub use dynamic_texture_atlas_builder::*;
 pub use rect::*;

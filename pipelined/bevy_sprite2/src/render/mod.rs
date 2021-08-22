@@ -384,8 +384,8 @@ pub fn queue_sprites(
     sprite_meta.texture_bind_group_keys.clear();
     for mut transparent_phase in views.iter_mut() {
         for (i, sprite) in extracted_sprites.sprites.iter().enumerate() {
-            let extracted_sprite_shaders =
-                sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
+            // let extracted_sprite_shaders =
+            //     sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
             let texture_bind_group_key = sprite_meta.texture_bind_groups.get_or_insert_with(
                 sprite.handle.clone_weak(),
                 || {
@@ -402,7 +402,8 @@ pub fn queue_sprites(
                             },
                         ],
                         label: None,
-                        layout: &extracted_sprite_shaders.material_layout,
+                        layout: &sprite_shaders.material_layout,
+                        // layout: &extracted_sprite_shaders.material_layout,
                     })
                 },
             );
