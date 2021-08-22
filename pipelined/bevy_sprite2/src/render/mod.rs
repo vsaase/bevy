@@ -26,8 +26,17 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Debug, Clone, TypeUuid)]
 #[uuid = "80bb1fe3-f226-4164-88a8-33b638fbfeda"]
 pub struct SpriteShadersInfo {
-    sample_type: TextureSampleType,
-    shader: String,
+    pub sample_type: TextureSampleType,
+    pub shader: String,
+}
+
+impl Default for SpriteShadersInfo {
+    fn default() -> Self {
+        SpriteShadersInfo {
+            sample_type: TextureSampleType::Float { filterable: false },
+            shader: include_str!("sprite.wgsl").to_string(),
+        }
+    }
 }
 
 pub const SPRITE_SHADERS_INFO_DEFAULT_HANDLE: HandleUntyped =
@@ -36,10 +45,7 @@ pub const SPRITE_SHADERS_INFO_DEFAULT_HANDLE: HandleUntyped =
 pub fn make_default_sprite_shaders(mut sprite_shaders: ResMut<Assets<SpriteShadersInfo>>) {
     sprite_shaders.set_untracked(
         SPRITE_SHADERS_INFO_DEFAULT_HANDLE,
-        SpriteShadersInfo {
-            sample_type: TextureSampleType::Float { filterable: false },
-            shader: include_str!("sprite.wgsl").to_string(),
-        },
+        SpriteShadersInfo::default(),
     );
 }
 
@@ -434,7 +440,6 @@ pub fn queue_sprites(
                             },
                         ],
                         label: None,
-                        // layout: &sprite_shaders.material_layout,
                         layout: &extracted_sprite_shaders.material_layout,
                     })
                 },
