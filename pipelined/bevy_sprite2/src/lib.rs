@@ -6,7 +6,8 @@ mod sprite;
 mod texture_atlas;
 mod texture_atlas_builder;
 
-use bevy_asset::AddAsset;
+use bevy_asset::{AddAsset, AssetPlugin};
+use bevy_core::CorePlugin;
 pub use bundle::*;
 pub use dynamic_texture_atlas_builder::*;
 pub use rect::*;
@@ -16,6 +17,7 @@ pub use texture_atlas::*;
 pub use texture_atlas_builder::*;
 
 use bevy_app::prelude::*;
+use bevy_ecs::system::IntoSystem;
 use bevy_render2::{render_graph::RenderGraph, render_phase::DrawFunctions, RenderStage};
 
 #[derive(Default)]
@@ -25,6 +27,8 @@ impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
         app.add_asset::<TextureAtlas>()
             .register_type::<Sprite>()
+            .add_asset::<SpriteShaders>()
+            .add_startup_system(make_default_sprite_shaders.system())
             .add_system_to_stage(CoreStage::PostUpdate, sprite_auto_resize_system);
         let render_app = app.sub_app_mut(0);
         render_app

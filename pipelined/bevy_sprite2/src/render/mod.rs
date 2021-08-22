@@ -2,10 +2,11 @@ use crate::{
     texture_atlas::{TextureAtlas, TextureAtlasSprite},
     Rect, Sprite,
 };
-use bevy_asset::{Assets, Handle};
+use bevy_asset::{Assets, Handle, HandleUntyped};
 use bevy_core_pipeline::Transparent2dPhase;
 use bevy_ecs::{prelude::*, system::SystemState};
 use bevy_math::{Mat4, Vec2, Vec3, Vec4Swizzles};
+use bevy_reflect::TypeUuid;
 use bevy_render2::{
     mesh::{shape::Quad, Indices, Mesh, VertexAttributeValues},
     render_asset::RenderAssets,
@@ -22,16 +23,37 @@ use bevy_transform::components::GlobalTransform;
 use bevy_utils::slab::{FrameSlabMap, FrameSlabMapKey};
 use bytemuck::{Pod, Zeroable};
 
+#[derive(Debug, TypeUuid)]
+#[uuid = "80bb1fe3-f226-4164-88a8-33b638fbfeda"]
 pub struct SpriteShaders {
     pipeline: RenderPipeline,
     view_layout: BindGroupLayout,
     material_layout: BindGroupLayout,
 }
 
+pub const SPRITE_SHADERS_DEFAULT_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(SpriteShaders::TYPE_UUID, 2785347840338333446);
+
+pub fn make_default_sprite_shaders(
+    mut sprite_shaders: ResMut<Assets<SpriteShaders>>,
+    render_device: Res<RenderDevice>,
+) {
+    sprite_shaders.set_untracked(
+        SPRITE_SHADERS_DEFAULT_HANDLE,
+        SpriteShaders::from_device(&render_device),
+    );
+}
+
 // TODO: this pattern for initializing the shaders / pipeline isn't ideal. this should be handled by the asset system
 impl FromWorld for SpriteShaders {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
+        Self::from_device(render_device)
+    }
+}
+
+impl SpriteShaders {
+    fn from_device(render_device: &RenderDevice) -> Self {
         let shader = Shader::from_wgsl(include_str!("sprite.wgsl"));
         let shader_module = render_device.create_shader_module(&shader);
 
@@ -148,6 +170,7 @@ struct ExtractedSprite {
     transform: Mat4,
     rect: Rect,
     handle: Handle<Image>,
+    shaders_handle: Handle<SpriteShaders>,
     atlas_size: Option<Vec2>,
 }
 
@@ -158,12 +181,18 @@ pub struct ExtractedSprites {
 
 pub fn extract_atlases(
     texture_atlases: Res<Assets<TextureAtlas>>,
-    atlas_query: Query<(&TextureAtlasSprite, &GlobalTransform, &Handle<TextureAtlas>)>,
+    shaders: Res<Assets<SpriteShaders>>,
+    atlas_query: Query<(
+        &TextureAtlasSprite,
+        &GlobalTransform,
+        &Handle<TextureAtlas>,
+        &Handle<SpriteShaders>,
+    )>,
     mut render_world: ResMut<RenderWorld>,
 ) {
     let mut extracted_sprites = Vec::new();
-    for (atlas_sprite, transform, texture_atlas_handle) in atlas_query.iter() {
-        if !texture_atlases.contains(texture_atlas_handle) {
+    for (atlas_sprite, transform, texture_atlas_handle, shaders_handle) in atlas_query.iter() {
+        if !texture_atlases.contains(texture_atlas_handle) || !shaders.contains(shaders_handle) {
             continue;
         }
 
@@ -174,6 +203,7 @@ pub fn extract_atlases(
                 transform: transform.compute_matrix(),
                 rect,
                 handle: texture_atlas.texture.clone_weak(),
+                shaders_handle: shaders_handle.clone_weak(),
             });
         }
     }
@@ -185,12 +215,18 @@ pub fn extract_atlases(
 
 pub fn extract_sprites(
     images: Res<Assets<Image>>,
-    sprite_query: Query<(&Sprite, &GlobalTransform, &Handle<Image>)>,
+    shaders: Res<Assets<SpriteShaders>>,
+    sprite_query: Query<(
+        &Sprite,
+        &GlobalTransform,
+        &Handle<Image>,
+        &Handle<SpriteShaders>,
+    )>,
     mut render_world: ResMut<RenderWorld>,
 ) {
     let mut extracted_sprites = Vec::new();
-    for (sprite, transform, handle) in sprite_query.iter() {
-        if !images.contains(handle) {
+    for (sprite, transform, handle, shaders_handle) in sprite_query.iter() {
+        if !images.contains(handle) || !shaders.contains(shaders_handle) {
             continue;
         }
 
@@ -202,6 +238,7 @@ pub fn extract_sprites(
                 max: sprite.size,
             },
             handle: handle.clone_weak(),
+            shaders_handle: shaders_handle.clone_weak(),
         });
     }
 
@@ -321,6 +358,7 @@ pub fn queue_sprites(
     mut sprite_meta: ResMut<SpriteMeta>,
     view_meta: Res<ViewMeta>,
     sprite_shaders: Res<SpriteShaders>,
+    sprite_shaders_assets: Res<Assets<SpriteShaders>>,
     mut extracted_sprites: ResMut<ExtractedSprites>,
     gpu_images: Res<RenderAssets<Image>>,
     mut views: Query<&mut RenderPhase<Transparent2dPhase>>,
@@ -346,6 +384,8 @@ pub fn queue_sprites(
     sprite_meta.texture_bind_group_keys.clear();
     for mut transparent_phase in views.iter_mut() {
         for (i, sprite) in extracted_sprites.sprites.iter().enumerate() {
+            let extracted_sprite_shaders =
+                sprite_shaders_assets.get(&sprite.shaders_handle).unwrap();
             let texture_bind_group_key = sprite_meta.texture_bind_groups.get_or_insert_with(
                 sprite.handle.clone_weak(),
                 || {
@@ -362,7 +402,7 @@ pub fn queue_sprites(
                             },
                         ],
                         label: None,
-                        layout: &sprite_shaders.material_layout,
+                        layout: &extracted_sprite_shaders.material_layout,
                     })
                 },
             );
