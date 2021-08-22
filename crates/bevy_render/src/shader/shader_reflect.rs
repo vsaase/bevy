@@ -131,7 +131,7 @@ fn reflect_binding(
             &binding.name,
             BindType::Texture {
                 view_dimension: reflect_dimension(type_description),
-                sample_type: TextureSampleType::Float { filterable: true },
+                sample_type: TextureSampleType::Uint, //Float { filterable: true },
                 multisampled: false,
             },
         ),
