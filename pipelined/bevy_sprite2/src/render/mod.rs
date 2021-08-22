@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::{
     texture_atlas::{TextureAtlas, TextureAtlasSprite},
     Rect, Sprite,
@@ -65,7 +63,7 @@ impl RenderAsset for SpriteShadersInfo {
         render_device: &RenderDevice,
         _render_queue: &bevy_render2::renderer::RenderQueue,
     ) -> Self::PreparedAsset {
-        let shader = Shader::from_wgsl(Cow::from(extracted_asset.shader));
+        let shader = Shader::from_wgsl(extracted_asset.shader);
         SpriteShaders::from_device_with_sample_type_with_shader(
             render_device,
             extracted_asset.sample_type,
