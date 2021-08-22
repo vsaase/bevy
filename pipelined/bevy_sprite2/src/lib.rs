@@ -17,7 +17,10 @@ pub use texture_atlas_builder::*;
 
 use bevy_app::prelude::*;
 use bevy_ecs::system::IntoSystem;
-use bevy_render2::{render_graph::RenderGraph, render_phase::DrawFunctions, RenderStage};
+use bevy_render2::{
+    render_asset::RenderAssetPlugin, render_graph::RenderGraph, render_phase::DrawFunctions,
+    RenderStage,
+};
 
 #[derive(Default)]
 pub struct SpritePlugin;
@@ -26,7 +29,8 @@ impl Plugin for SpritePlugin {
     fn build(&self, app: &mut App) {
         app.add_asset::<TextureAtlas>()
             .register_type::<Sprite>()
-            .add_asset::<SpriteShaders>()
+            .add_plugin(RenderAssetPlugin::<SpriteShadersInfo>::default())
+            .add_asset::<SpriteShadersInfo>()
             .add_startup_system(make_default_sprite_shaders.system())
             .add_system_to_stage(CoreStage::PostUpdate, sprite_auto_resize_system);
         let render_app = app.sub_app_mut(0);

@@ -9,7 +9,7 @@ use bevy_math::{Mat4, Vec2, Vec3, Vec4Swizzles};
 use bevy_reflect::TypeUuid;
 use bevy_render2::{
     mesh::{shape::Quad, Indices, Mesh, VertexAttributeValues},
-    render_asset::RenderAssets,
+    render_asset::{RenderAsset, RenderAssets},
     render_graph::{Node, NodeRunError, RenderGraphContext},
     render_phase::{Draw, DrawFunctions, Drawable, RenderPhase, TrackedRenderPass},
     render_resource::*,
@@ -17,43 +17,70 @@ use bevy_render2::{
     shader::Shader,
     texture::{BevyDefault, Image},
     view::{ViewMeta, ViewUniform, ViewUniformOffset},
-    AppWorld, RenderWorld,
+    RenderWorld,
 };
 use bevy_transform::components::GlobalTransform;
 use bevy_utils::slab::{FrameSlabMap, FrameSlabMapKey};
 use bytemuck::{Pod, Zeroable};
 
-#[derive(Debug, TypeUuid)]
+#[derive(Debug, Clone, TypeUuid)]
 #[uuid = "80bb1fe3-f226-4164-88a8-33b638fbfeda"]
+pub struct SpriteShadersInfo {
+    sample_type: TextureSampleType,
+}
+
+pub const SPRITE_SHADERS_INFO_DEFAULT_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(SpriteShadersInfo::TYPE_UUID, 2785347840338333446);
+
+pub fn make_default_sprite_shaders(mut sprite_shaders: ResMut<Assets<SpriteShadersInfo>>) {
+    sprite_shaders.set_untracked(
+        SPRITE_SHADERS_INFO_DEFAULT_HANDLE,
+        SpriteShadersInfo {
+            sample_type: TextureSampleType::Float { filterable: false },
+        },
+    );
+}
+
 pub struct SpriteShaders {
     pipeline: RenderPipeline,
     view_layout: BindGroupLayout,
     material_layout: BindGroupLayout,
 }
 
-pub const SPRITE_SHADERS_DEFAULT_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(SpriteShaders::TYPE_UUID, 2785347840338333446);
-
-pub fn make_default_sprite_shaders(
-    mut sprite_shaders: ResMut<Assets<SpriteShaders>>,
-    render_device: Res<RenderDevice>,
-) {
-    sprite_shaders.set_untracked(
-        SPRITE_SHADERS_DEFAULT_HANDLE,
-        SpriteShaders::from_device(&render_device),
-    );
-}
-
 // TODO: this pattern for initializing the shaders / pipeline isn't ideal. this should be handled by the asset system
 impl FromWorld for SpriteShaders {
     fn from_world(world: &mut World) -> Self {
         let render_device = world.get_resource::<RenderDevice>().unwrap();
-        Self::from_device(render_device)
+        Self::from_device_with_sample_type(
+            render_device,
+            TextureSampleType::Float { filterable: false },
+        )
+    }
+}
+
+impl RenderAsset for SpriteShadersInfo {
+    type ExtractedAsset = SpriteShadersInfo;
+
+    type PreparedAsset = SpriteShaders;
+
+    fn extract_asset(&self) -> Self::ExtractedAsset {
+        self.clone()
+    }
+
+    fn prepare_asset(
+        extracted_asset: Self::ExtractedAsset,
+        render_device: &RenderDevice,
+        render_queue: &bevy_render2::renderer::RenderQueue,
+    ) -> Self::PreparedAsset {
+        SpriteShaders::from_device_with_sample_type(render_device, extracted_asset.sample_type)
     }
 }
 
 impl SpriteShaders {
-    fn from_device(render_device: &RenderDevice) -> Self {
+    fn from_device_with_sample_type(
+        render_device: &RenderDevice,
+        sample_type: TextureSampleType,
+    ) -> Self {
         let shader = Shader::from_wgsl(include_str!("sprite.wgsl"));
         let shader_module = render_device.create_shader_module(&shader);
 
@@ -78,7 +105,7 @@ impl SpriteShaders {
                     visibility: ShaderStage::FRAGMENT,
                     ty: BindingType::Texture {
                         multisampled: false,
-                        sample_type: TextureSampleType::Float { filterable: false },
+                        sample_type,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
@@ -170,7 +197,7 @@ struct ExtractedSprite {
     transform: Mat4,
     rect: Rect,
     handle: Handle<Image>,
-    shaders_handle: Handle<SpriteShaders>,
+    shaders_handle: Handle<SpriteShadersInfo>,
     atlas_size: Option<Vec2>,
 }
 
@@ -181,12 +208,12 @@ pub struct ExtractedSprites {
 
 pub fn extract_atlases(
     texture_atlases: Res<Assets<TextureAtlas>>,
-    shaders: Res<Assets<SpriteShaders>>,
+    shaders: Res<Assets<SpriteShadersInfo>>,
     atlas_query: Query<(
         &TextureAtlasSprite,
         &GlobalTransform,
         &Handle<TextureAtlas>,
-        &Handle<SpriteShaders>,
+        &Handle<SpriteShadersInfo>,
     )>,
     mut render_world: ResMut<RenderWorld>,
 ) {
@@ -215,12 +242,12 @@ pub fn extract_atlases(
 
 pub fn extract_sprites(
     images: Res<Assets<Image>>,
-    shaders: Res<Assets<SpriteShaders>>,
+    shaders: Res<Assets<SpriteShadersInfo>>,
     sprite_query: Query<(
         &Sprite,
         &GlobalTransform,
         &Handle<Image>,
-        &Handle<SpriteShaders>,
+        &Handle<SpriteShadersInfo>,
     )>,
     mut render_world: ResMut<RenderWorld>,
 ) {
@@ -360,14 +387,14 @@ pub fn queue_sprites(
     sprite_shaders: Res<SpriteShaders>,
     mut extracted_sprites: ResMut<ExtractedSprites>,
     gpu_images: Res<RenderAssets<Image>>,
+    sprite_shaders_assets: Res<RenderAssets<SpriteShadersInfo>>,
     mut views: Query<&mut RenderPhase<Transparent2dPhase>>,
-    app_world: Res<AppWorld>,
 ) {
     if view_meta.uniforms.is_empty() {
         return;
     }
 
-    let sprite_shaders_assets = app_world.get_resource::<Assets<SpriteShaders>>().unwrap();
+    // let sprite_shaders_assets = app_world.get_resource::<Assets<SpriteShaders>>().unwrap();
 
     // TODO: define this without needing to check every frame
     sprite_meta.view_bind_group.get_or_insert_with(|| {

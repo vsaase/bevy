@@ -1,6 +1,6 @@
 use crate::{
     texture_atlas::{TextureAtlas, TextureAtlasSprite},
-    Sprite, SpriteShaders, SPRITE_SHADERS_DEFAULT_HANDLE,
+    Sprite, SpriteShadersInfo, SPRITE_SHADERS_INFO_DEFAULT_HANDLE,
 };
 use bevy_asset::Handle;
 use bevy_ecs::bundle::Bundle;
@@ -13,7 +13,7 @@ pub struct PipelinedSpriteBundle {
     pub transform: Transform,
     pub global_transform: GlobalTransform,
     pub texture: Handle<Image>,
-    pub shaders: Handle<SpriteShaders>,
+    pub shaders: Handle<SpriteShadersInfo>,
 }
 
 impl Default for PipelinedSpriteBundle {
@@ -23,7 +23,7 @@ impl Default for PipelinedSpriteBundle {
             transform: Default::default(),
             global_transform: Default::default(),
             texture: Default::default(),
-            shaders: SPRITE_SHADERS_DEFAULT_HANDLE.typed(),
+            shaders: SPRITE_SHADERS_INFO_DEFAULT_HANDLE.typed(),
         }
     }
 }
@@ -39,7 +39,7 @@ pub struct PipelinedSpriteSheetBundle {
     /// Data pertaining to how the sprite is drawn on the screen
     pub transform: Transform,
     pub global_transform: GlobalTransform,
-    pub shaders: Handle<SpriteShaders>,
+    pub shaders: Handle<SpriteShadersInfo>,
 }
 
 impl Default for PipelinedSpriteSheetBundle {
@@ -49,7 +49,7 @@ impl Default for PipelinedSpriteSheetBundle {
             texture_atlas: Default::default(),
             transform: Default::default(),
             global_transform: Default::default(),
-            shaders: SPRITE_SHADERS_DEFAULT_HANDLE.typed(),
+            shaders: SPRITE_SHADERS_INFO_DEFAULT_HANDLE.typed(),
         }
     }
 }
