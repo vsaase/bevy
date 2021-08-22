@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     texture_atlas::{TextureAtlas, TextureAtlasSprite},
     Rect, Sprite,
@@ -27,6 +29,7 @@ use bytemuck::{Pod, Zeroable};
 #[uuid = "80bb1fe3-f226-4164-88a8-33b638fbfeda"]
 pub struct SpriteShadersInfo {
     sample_type: TextureSampleType,
+    shader: String,
 }
 
 pub const SPRITE_SHADERS_INFO_DEFAULT_HANDLE: HandleUntyped =
@@ -37,6 +40,7 @@ pub fn make_default_sprite_shaders(mut sprite_shaders: ResMut<Assets<SpriteShade
         SPRITE_SHADERS_INFO_DEFAULT_HANDLE,
         SpriteShadersInfo {
             sample_type: TextureSampleType::Float { filterable: false },
+            shader: include_str!("sprite.wgsl").to_string(),
         },
     );
 }
@@ -61,16 +65,21 @@ impl RenderAsset for SpriteShadersInfo {
         render_device: &RenderDevice,
         _render_queue: &bevy_render2::renderer::RenderQueue,
     ) -> Self::PreparedAsset {
-        SpriteShaders::from_device_with_sample_type(render_device, extracted_asset.sample_type)
+        let shader = Shader::from_wgsl(Cow::from(extracted_asset.shader));
+        SpriteShaders::from_device_with_sample_type_with_shader(
+            render_device,
+            extracted_asset.sample_type,
+            shader,
+        )
     }
 }
 
 impl SpriteShaders {
-    fn from_device_with_sample_type(
+    fn from_device_with_sample_type_with_shader(
         render_device: &RenderDevice,
         sample_type: TextureSampleType,
+        shader: Shader,
     ) -> Self {
-        let shader = Shader::from_wgsl(include_str!("sprite.wgsl"));
         let shader_module = render_device.create_shader_module(&shader);
 
         let view_layout = render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
